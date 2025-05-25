@@ -35,6 +35,7 @@ type Exchange struct {
 
 //go run server.go
 //Banco de dados:
+//entre em server para ver os dados salvos no bd
 //sqlite3 data.db
 //.tables
 //create table exchanges (id string, code string, codein string, name string, high string, low string, varBid string, pctChange string, bid string, ask string, timestamp string, create_date string);
@@ -48,25 +49,8 @@ func main() {
 }
 
 func GetExchangeHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
-	select { //switch case assincrono
-	case <-ctx.Done():
-		log.Println("Request of api canceled")
-		w.Write([]byte("Request of api canceled\n"))
-		return
-	case <-ctx.Done():
-		log.Println("Request canceled by client")
-	}
-
-	db, err := connectionDataBase()
-	log.Println(err)
-	defer db.Close()
-
-	if err != nil {
-		w.Write([]byte("Error connecting to database: " + err.Error() + "\n"))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	ctx, cancel := context.WithTimeout(r.Context(), 200*time.Millisecond)
+	defer cancel()
 
 	exchange, err := getExchange(ctx)
 	if err != nil {
@@ -74,6 +58,14 @@ func GetExchangeHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	db, err := connectionDataBase()
+	if err != nil {
+		w.Write([]byte("Error connecting to database: " + err.Error() + "\n"))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
 
 	err = saveExchangeInDB(ctx, db, exchange)
 	if err != nil {
@@ -98,9 +90,6 @@ func connectionDataBase() (*sql.DB, error) {
 }
 
 func getExchange(ctx context.Context) (*ExchangeData, error) {
-	ctx, cancel := context.WithTimeout(ctx, 200*time.Second)
-	defer cancel()
-
 	url := fmt.Sprintf(`https://economia.awesomeapi.com.br/json/all/USD-BRL`)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -129,6 +118,15 @@ func getExchange(ctx context.Context) (*ExchangeData, error) {
 func saveExchangeInDB(ctx context.Context, db *sql.DB, exchange *ExchangeData) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 	defer cancel()
+
+	fmt.Println("Ssssss", exchange.Data.Name)
+
+	/*
+		OBS: Nesse exercicio estamos criando a tabela manualmente, mas poria criar a  tabela automaticamente pelo código.
+		_, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS exchanges (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, bid TEXT)")
+		//if err != nil {
+		//	return fmt.Errorf("fail to create table: %w", err)
+		}*/
 
 	id := uuid.New().String()
 	_, err := db.ExecContext(ctx, "INSERT INTO exchanges (id, code, codein, name, high, low, varBid, pctChange, bid, ask, timestamp, create_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
